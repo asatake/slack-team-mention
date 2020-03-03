@@ -12,12 +12,13 @@ import (
 	"os"
 )
 
-func GenMessage(team team.Team, txt string) {
+func GenMessage(team team.Team, txt string) string {
 	msg := ""
 
 	for _, t := range team.Members {
 		msg += "<@" + t.Name + "> "
 	}
+
 	return msg + txt
 }
 
@@ -31,16 +32,34 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 	api := slack.New(os.Getenv("SLACK_ACCESS_TOKEN"))
 
 	var slashCommand slack.SlashCommand
-	err := json.Unmarshal([]byte(u.Encode()), &slashCommand)
+	if unserializeErr := json.Unmarshal([]byte(u.Encode()), &slashCommand); unserializeErr != nil {
+		fmt.Println(unserializeErr.Error())
+		return events.APIGatewayProxyResponse{Body: "decode error: " + err.Error(), StatusCode: 500}, nil
+	}
 
 	var teams team.Team
-	switch request.Path {
-	case "/sample":
-		teams = team.SampleTeam()
-		msg := slack.Message{
-			Msg: slack.Msg,
-		}
+	team.TeamsFactory(slashCommand.Command)
 
-		api.PostMessage(slashCommand.ChannelID)
+	postMessageParams := slack.PostMessageParameters{
+		AsUser:    true,
+		Username:  slashCommand.UserName,
+		LinkNames: 1,
+		Markdown:  true,
 	}
+
+	msg := GenMessage(teams, slashCommand.Text)
+
+	option1 := slack.MsgOptionPostMessageParameters(postMessageParams)
+	option2 := slack.MsgOptionText(msg, false)
+
+	if _, _, err := api.PostMessage(slashCommand.ChannelID, option1, option2); err != nil {
+		fmt.Println(err.Error())
+		return events.APIGatewayProxyResponse{Body: "decode error: " + err.Error(), StatusCode: 500}, nil
+	}
+
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+func main() {
+	lambda.Start(HandleRequest)
 }
