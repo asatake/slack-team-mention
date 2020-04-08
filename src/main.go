@@ -1,22 +1,35 @@
 package main
 
 import (
-	"./team"
+	"./teamconf"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/slack-go/slack"
+	yaml "gopkg.in/yaml.v2"
+	"io/ioutil"
 	"net/url"
 	"os"
 )
 
-func GenMessage(team team.Team, txt string) string {
+func ReadTeamSettings() ([]teamconf.Team, error) {
+	buf, fileReadErr := ioutil.ReadFile("./teams.yaml")
+	if fileReadErr != nil {
+		return []teamconf.Team{}, fileReadErr
+	}
+
+	t := []teamconf.Team{}
+	err := yaml.UnmarshalStrict([]byte(buf), &t)
+	return t, err
+}
+
+func GenMessage(team teamconf.Team, txt string) string {
 	msg := ""
 
 	for _, t := range team.Members {
-		msg += "<@" + t.Name + "> "
+		msg += "<@" + t + "> "
 	}
 
 	return msg + txt
@@ -37,8 +50,16 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		return events.APIGatewayProxyResponse{Body: "decode error: " + err.Error(), StatusCode: 500}, nil
 	}
 
-	var teams team.Team
-	team.TeamsFactory(slashCommand.Command)
+	teams, teamErr := ReadTeamSettings()
+	if teamErr != nil {
+		return events.APIGatewayProxyResponse{Body: "decode error: " + teamErr.Error(), StatusCode: 500}, nil
+	}
+	team, searchErr := teamconf.SearchTeam(slashCommand.Command, teams)
+	if searchErr != nil {
+		return events.APIGatewayProxyResponse{Body: "decode error: " + searchErr.Error(), StatusCode: 500}, nil
+	}
+
+	msg := GenMessage(team, slashCommand.Text)
 
 	postMessageParams := slack.PostMessageParameters{
 		AsUser:    true,
@@ -46,8 +67,6 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		LinkNames: 1,
 		Markdown:  true,
 	}
-
-	msg := GenMessage(teams, slashCommand.Text)
 
 	option1 := slack.MsgOptionPostMessageParameters(postMessageParams)
 	option2 := slack.MsgOptionText(msg, false)

@@ -1,0 +1,10 @@
+- team_name: SampleTeam1
+  member:
+    - member1
+    - member2
+    - member2
+- team_name: SampleTeam2
+  member:
+    - member4
+    - member5
+    - member6
