@@ -4,6 +4,7 @@ import (
 	"./teamconf"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -14,7 +15,18 @@ import (
 	"os"
 )
 
-func ReadTeamSettings() ([]teamconf.Team, error) {
+func getFullName(id string) (string, error) {
+	api := slack.New(os.Getenv("SLACK_ACCESS_TOKEN"))
+	user, err := api.GetUserInfo(id)
+
+	if err != nil {
+		return "", errors.New("Unexpected user id")
+	}
+
+	return user.Name, nil
+}
+
+func readTeamSettings() ([]teamconf.Team, error) {
 	buf, fileReadErr := ioutil.ReadFile("./teams.yaml")
 	if fileReadErr != nil {
 		return []teamconf.Team{}, fileReadErr
@@ -25,7 +37,7 @@ func ReadTeamSettings() ([]teamconf.Team, error) {
 	return t, err
 }
 
-func GenMessage(team teamconf.Team, txt string) string {
+func genMessage(team teamconf.Team, txt string) string {
 	msg := ""
 
 	for _, t := range team.Members {
@@ -35,7 +47,7 @@ func GenMessage(team teamconf.Team, txt string) string {
 	return msg + txt
 }
 
-func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	u, err := url.ParseQuery(request.Body)
 	if err != nil {
 		fmt.Println("url decode error: " + err.Error())
@@ -50,7 +62,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		return events.APIGatewayProxyResponse{Body: "decode error: " + err.Error(), StatusCode: 500}, nil
 	}
 
-	teams, teamErr := ReadTeamSettings()
+	teams, teamErr := readTeamSettings()
 	if teamErr != nil {
 		return events.APIGatewayProxyResponse{Body: "decode error: " + teamErr.Error(), StatusCode: 500}, nil
 	}
@@ -59,7 +71,7 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		return events.APIGatewayProxyResponse{Body: "decode error: " + searchErr.Error(), StatusCode: 500}, nil
 	}
 
-	msg := GenMessage(team, slashCommand.Text)
+	msg := genMessage(team, slashCommand.Text)
 
 	postMessageParams := slack.PostMessageParameters{
 		AsUser:    true,
@@ -80,5 +92,5 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 }
 
 func main() {
-	lambda.Start(HandleRequest)
+	lambda.Start(handleRequest)
 }
